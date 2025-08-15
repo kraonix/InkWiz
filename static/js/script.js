@@ -16,19 +16,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const newQueryBtn = document.getElementById('new-query-btn');
     const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
     const languageSelect = document.getElementById('language-select');
+    const mobileOverlay = document.getElementById('mobile-overlay');
 
     let currentImageThumbnail = null;
     let currentFile = null;
 
     // --- Sidebar Toggle Logic ---
-    sidebarToggleBtn.addEventListener('click', () => {
+    const toggleSidebar = () => {
         const isMobile = window.innerWidth <= 768;
         if (isMobile) {
             appLayout.classList.toggle('sidebar-mobile-open');
         } else {
             appLayout.classList.toggle('sidebar-collapsed');
         }
-    });
+    };
+    sidebarToggleBtn.addEventListener('click', toggleSidebar);
+    mobileOverlay.addEventListener('click', toggleSidebar);
 
     // --- New Query Logic ---
     newQueryBtn.addEventListener('click', () => {
@@ -50,7 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (date.toDateString() === today.toDateString()) return 'Today';
         if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
         
-        return date.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+        return date.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
     };
 
     const loadHistory = () => {
@@ -111,7 +114,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 li.appendChild(img);
                 li.appendChild(detailsDiv);
-                li.addEventListener('click', () => loadHistoryItem(item.id));
+                li.addEventListener('click', () => {
+                    loadHistoryItem(item.id);
+                    if (window.innerWidth <= 768) {
+                        toggleSidebar(); // Close sidebar on mobile after selection
+                    }
+                });
                 list.appendChild(li);
             });
 
