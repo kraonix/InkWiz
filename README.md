@@ -37,3 +37,8 @@
   ```bash
   git clone https://github.com/your-username/inkwiz.git
   cd inkwiz
+
+  ---
+# Images
+- <img width="1920" height="955" alt="image" src="https://github.com/user-attachments/assets/095e81ac-5a49-436b-a7da-a47fd1de257b" />
+
