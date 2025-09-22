@@ -1,0 +1,29 @@
+class Solution {
+public:
+    int maxFrequencyElements(vector<int>& nums) {
+        unordered_map<int, int> freq;
+
+        for(auto i: nums){
+            freq[i]++;
+        }
+
+        vector<pair<int, int>> a;
+        for(auto i: freq){
+            a.push_back({i.second, i.first});
+        }
+
+        sort(a.begin(), a.end(), greater<pair<int, int>>());
+
+
+        int ans = a[0].first, max = a[0].first;
+        for(int i = 1; i < a.size(); i++){
+            if(a[i].first == max){
+                ans += a[i].first;
+            }else{
+                break;
+            }
+        }
+
+        return ans;
+    }
+};
