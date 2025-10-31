@@ -1,137 +1,123 @@
 import os
 import json
+import base64
 import google.generativeai as genai
 from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
 from PIL import Image
+from io import BytesIO
 
 # Load environment variables
 load_dotenv()
 
-# --- FLASK CONFIG ---
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB upload limit
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB
 
 
 # --- GEMINI CONFIG ---
-try:
-    api_key = os.environ["GEMINI_API_KEY"]
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY is empty.")
-    genai.configure(api_key=api_key)
-except Exception as e:
-    raise SystemExit(f"Error: {e}. Set GEMINI_API_KEY in the .env file.")
+api_key = os.environ.get("GEMINI_API_KEY")
+if not api_key:
+    raise SystemExit("❌ GEMINI_API_KEY missing. Set it in .env or Render env vars.")
 
+genai.configure(api_key=api_key)
 
-generation_config = {
-    "temperature": 0.2,
-    "top_p": 1,
-    "top_k": 1,
-    "max_output_tokens": 4096,
-    "response_mime_type": "application/json",
-}
-
-safety_settings = [
-    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-]
-
-# ✅ Use latest model
 model = genai.GenerativeModel(
     model_name="gemini-2.5-flash-preview-09-2025",
-    generation_config=generation_config,
-    safety_settings=safety_settings,
+    generation_config={
+        "temperature": 0.2,
+        "top_p": 1,
+        "top_k": 1,
+        "max_output_tokens": 4096,
+        "response_mime_type": "application/json",
+    }
 )
 
 
-# --- PROMPTS ---
+# Prompts
 def get_processing_prompt(language):
-    prompts = {
-        'hindi': """
-        आप एक विशेषज्ञ ओसीआर और व्याकरण सुधार उपकरण हैं।
-        छवि का विश्लेषण करें:
-        1. टेक्स्ट निकालें (exact).
-        2. व्याकरण और वर्तनी ठीक करें।
+    if language == "hindi":
+        return """
+        आप एक विशेषज्ञ OCR और व्याकरण सुधार प्रणाली हैं।
+        छवि से टेक्स्ट ज्यों का त्यों निकालें और फिर उसे सही करें।
 
-        आउटपुट JSON होना चाहिए:
-        {
-            "extracted_text": "...",
-            "corrected_text": "..."
-        }
-        """,
-
-        'english': """
-        You are an expert OCR + grammar correction tool.
-        Extract the text exactly as it appears.
-        Then fix grammar/spelling.
-
-        Output STRICT JSON:
+        JSON आउटपुट:
         {
             "extracted_text": "...",
             "corrected_text": "..."
         }
         """
+    return """
+    You are an expert OCR + grammar correction tool.
+    Extract text exactly as in image, then correct grammar.
+
+    JSON output strictly:
+    {
+        "extracted_text": "...",
+        "corrected_text": "..."
     }
-    return prompts.get(language, prompts["english"])
+    """
 
 
-# --- ROUTES ---
-@app.route('/')
+@app.route("/")
 def index():
-    return render_template('index.html')
+    return render_template("index.html")
 
 
-@app.route('/process', methods=['POST'])
+@app.route("/process", methods=["POST"])
 def process_image():
-    if 'file' not in request.files:
-        return jsonify({"error": "No file part in request"}), 400
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded."}), 400
 
     file = request.files["file"]
     language = request.form.get("language", "english")
 
     if file.filename == "":
-        return jsonify({"error": "No file selected"}), 400
+        return jsonify({"error": "Empty file name."}), 400
 
     try:
-        # Open image
-        img = Image.open(file.stream)
+        # ✅ Read file ONCE
+        file_bytes = file.read()
 
-        # Gemini response
+        if len(file_bytes) == 0:
+            return jsonify({"error": "Uploaded file is empty."}), 400
+
+        # ✅ Convert to base64 for Gemini
+        img_base64 = base64.b64encode(file_bytes).decode("utf-8")
+
         prompt = get_processing_prompt(language)
+
+        # ✅ Gemini Request
         response = model.generate_content([
             prompt,
-            {"mime_type": "image/jpeg", "data": file.read()}
+            {
+                "mime_type": "image/jpeg",
+                "data": img_base64
+            }
         ])
 
-        # ✅ Extract response text from new SDK format
-        raw_text = response.candidates[0].content.parts[0].text
+        # ✅ Extract text safely
+        try:
+            raw_text = response.candidates[0].content.parts[0].text
+        except:
+            raw_text = response.text
 
-        # ✅ Remove accidental markdown or code fences
+        # Clean JSON
         clean_text = (
             raw_text.replace("```json", "")
                     .replace("```", "")
                     .strip()
         )
 
-        # ✅ Safe JSON parsing
         result_json = json.loads(clean_text)
 
-        extracted = result_json.get("extracted_text", "")
-        corrected = result_json.get("corrected_text", "")
-
-        if not extracted:
-            return jsonify({"error": "No text extracted from image."}), 400
-
         return jsonify({
-            "extracted_text": extracted,
-            "corrected_text": corrected
+            "extracted_text": result_json.get("extracted_text", ""),
+            "corrected_text": result_json.get("corrected_text", "")
         })
 
     except Exception as e:
-        app.logger.error(f"❌ INTERNAL ERROR: {e}")
-        return jsonify({"error": "An internal error occurred. Try again later."}), 500
+        app.logger.error(f"🔥 INTERNAL ERROR: {e}")
+        return jsonify({"error": "Internal server error."}), 500
 
 
 if __name__ == "__main__":
