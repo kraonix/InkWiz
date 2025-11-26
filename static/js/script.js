@@ -1,5 +1,44 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Element Selection ---
+
+    // ------------------------------------------------
+    // ✅ IMAGE COMPRESSION FUNCTION (NEW)
+    // ------------------------------------------------
+    async function compressImageTo250KB(file) {
+        return new Promise((resolve) => {
+            const img = new Image();
+            const reader = new FileReader();
+
+            reader.onload = (e) => { img.src = e.target.result; };
+
+            img.onload = () => {
+                const canvas = document.createElement("canvas");
+                const ctx = canvas.getContext("2d");
+
+                // ✅ Reduce size by 50%
+                canvas.width = img.width * 0.5;
+                canvas.height = img.height * 0.5;
+
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                let quality = 0.9;
+                let compressed = canvas.toDataURL("image/jpeg", quality);
+
+                // ✅ Make sure it's ≤ 250KB
+                while (compressed.length > 250 * 1024 && quality > 0.1) {
+                    quality -= 0.05;
+                    compressed = canvas.toDataURL("image/jpeg", quality);
+                }
+
+                resolve(compressed);
+            };
+
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // ------------------------------------------------
+    // ✅ Elements
+    // ------------------------------------------------
     const appLayout = document.getElementById('app-layout');
     const uploadPrompt = document.getElementById('upload-prompt');
     const fileInput = document.getElementById('file-input');
@@ -21,7 +60,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentImageThumbnail = null;
     let currentFile = null;
 
-    // --- Sidebar Toggle Logic ---
+    // ------------------------------------------------
+    // ✅ Sidebar Toggle
+    // ------------------------------------------------
     const toggleSidebar = () => {
         const isMobile = window.innerWidth <= 768;
         if (isMobile) {
@@ -33,7 +74,9 @@ document.addEventListener('DOMContentLoaded', () => {
     sidebarToggleBtn.addEventListener('click', toggleSidebar);
     mobileOverlay.addEventListener('click', toggleSidebar);
 
-    // --- New Query Logic ---
+    // ------------------------------------------------
+    // ✅ New Query
+    // ------------------------------------------------
     newQueryBtn.addEventListener('click', () => {
         fileInput.value = '';
         imageAndResultsContainer.style.display = 'none';
@@ -44,7 +87,9 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.history-item').forEach(li => li.classList.remove('active'));
     });
 
-    // --- History Management ---
+    // ------------------------------------------------
+    // ✅ History Formatting
+    // ------------------------------------------------
     const formatDateLabel = (date) => {
         const today = new Date();
         const yesterday = new Date();
@@ -52,27 +97,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (date.toDateString() === today.toDateString()) return 'Today';
         if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-        
+
         return date.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
     };
 
+    // ------------------------------------------------
+    // ✅ Load History
+    // ------------------------------------------------
     const loadHistory = () => {
         historyListContainer.innerHTML = '';
         const history = JSON.parse(localStorage.getItem('inkwizHistory')) || [];
-        
+
         if (history.length === 0) {
             historyListContainer.innerHTML = '<div class="no-history">No history yet.</div>';
             clearHistoryBtn.style.display = 'none';
             return;
         }
-        
+
         clearHistoryBtn.style.display = 'block';
 
         const groupedByDate = history.reduce((acc, item) => {
             const dateLabel = formatDateLabel(new Date(item.id));
-            if (!acc[dateLabel]) {
-                acc[dateLabel] = [];
-            }
+            if (!acc[dateLabel]) acc[dateLabel] = [];
             acc[dateLabel].push(item);
             return acc;
         }, {});
@@ -87,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const list = document.createElement('ul');
             list.className = 'history-items-list';
-            
+
             groupedByDate[dateLabel].forEach(item => {
                 const li = document.createElement('li');
                 li.className = 'history-item';
@@ -108,18 +154,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 const timeSpan = document.createElement('span');
                 timeSpan.textContent = new Date(item.id).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 timeSpan.className = 'history-time';
-                
+
                 detailsDiv.appendChild(titleSpan);
                 detailsDiv.appendChild(timeSpan);
 
                 li.appendChild(img);
                 li.appendChild(detailsDiv);
+
                 li.addEventListener('click', () => {
                     loadHistoryItem(item.id);
-                    if (window.innerWidth <= 768) {
-                        toggleSidebar(); // Close sidebar on mobile after selection
-                    }
+                    if (window.innerWidth <= 768) toggleSidebar();
                 });
+
                 list.appendChild(li);
             });
 
@@ -128,27 +174,38 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    // ------------------------------------------------
+    // ✅ Save to History (UPDATED)
+    // ------------------------------------------------
     const saveToHistory = (extractedText, correctedText, thumbnail) => {
         let history = JSON.parse(localStorage.getItem('inkwizHistory')) || [];
+
         const newEntry = {
             id: Date.now(),
-            extracted_text: extractedText,
-            corrected_text: correctedText,
-            thumbnail: thumbnail,
+            extracted_text: extractedText.slice(0, 3000),
+            corrected_text: correctedText.slice(0, 3000),
+            thumbnail: thumbnail // ✅ already compressed
         };
+
         history.unshift(newEntry);
-        if (history.length > 30) history.pop();
+        history = history.slice(0, 10); // ✅ only keep last 10
+
         localStorage.setItem('inkwizHistory', JSON.stringify(history));
         loadHistory();
+
         setTimeout(() => {
             const newLi = historyListContainer.querySelector(`[data-id='${newEntry.id}']`);
             if (newLi) newLi.classList.add('active');
         }, 100);
     };
 
+    // ------------------------------------------------
+    // ✅ Load Single History Item
+    // ------------------------------------------------
     const loadHistoryItem = (id) => {
         const history = JSON.parse(localStorage.getItem('inkwizHistory')) || [];
         const item = history.find(h => h.id == id);
+
         if (item) {
             uploadPrompt.style.display = 'none';
             imageAndResultsContainer.style.display = 'block';
@@ -157,9 +214,9 @@ document.addEventListener('DOMContentLoaded', () => {
             extractedTextArea.value = item.extracted_text;
             correctedTextArea.value = item.corrected_text;
             resultsContainer.style.display = 'grid';
-            document.querySelectorAll('.history-item').forEach(li => {
-                li.classList.toggle('active', li.dataset.id == id);
-            });
+            document.querySelectorAll('.history-item').forEach(li =>
+                li.classList.toggle('active', li.dataset.id == id)
+            );
         }
     };
 
@@ -171,31 +228,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- Drag and Drop & File Input Logic ---
+    // ------------------------------------------------
+    // ✅ Drag & Drop + File Input
+    // ------------------------------------------------
     chooseImageBtn.addEventListener('click', () => fileInput.click());
+
     uploadPrompt.addEventListener('click', (e) => {
         if (e.target.id === 'upload-prompt' || e.target.closest('.upload-icon-wrapper') || e.target.closest('h2') || e.target.closest('p')) {
-           fileInput.click();
+            fileInput.click();
         }
     });
+
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
         uploadPrompt.addEventListener(eventName, e => {
             e.preventDefault();
             e.stopPropagation();
         }, false);
     });
+
     ['dragenter', 'dragover'].forEach(eventName => {
-        uploadPrompt.addEventListener(eventName, () => uploadPrompt.classList.add('drag-over'), false);
+        uploadPrompt.addEventListener(eventName, () =>
+            uploadPrompt.classList.add('drag-over'), false);
     });
+
     ['dragleave', 'drop'].forEach(eventName => {
-        uploadPrompt.addEventListener(eventName, () => uploadPrompt.classList.remove('drag-over'), false);
+        uploadPrompt.addEventListener(eventName, () =>
+            uploadPrompt.classList.remove('drag-over'), false);
     });
+
     uploadPrompt.addEventListener('drop', (e) => {
         handleFiles(e.dataTransfer.files);
     });
+
     fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
 
-    function handleFiles(files) {
+    async function handleFiles(files) {
         if (files.length === 0) return;
         const file = files[0];
 
@@ -204,27 +271,28 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         if (file.size > 16 * 1024 * 1024) {
-             showError('File is too large. Maximum size is 16MB.');
-             return;
+            showError('File is too large. Maximum size is 16MB.');
+            return;
         }
-        
+
         currentFile = file;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            currentImageThumbnail = e.target.result;
-            imagePreview.src = currentImageThumbnail;
-            processFile();
-        };
-        reader.readAsDataURL(file);
+
+        // ✅ Compress BEFORE using it
+        currentImageThumbnail = await compressImageTo250KB(file);
+        imagePreview.src = currentImageThumbnail;
+
+        processFile();
     }
-    
-    // --- Form Submission / Processing Logic ---
+
+    // ------------------------------------------------
+    // ✅ Process File (API call)
+    // ------------------------------------------------
     async function processFile() {
         if (!currentFile || !currentImageThumbnail) {
             showError("Please select an image file first.");
             return;
         }
-        
+
         const formData = new FormData();
         formData.append('file', currentFile);
         formData.append('language', languageSelect.value);
@@ -234,11 +302,14 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch('/process', { method: 'POST', body: formData });
             const data = await response.json();
+
             if (!response.ok) throw new Error(data.error || 'An unknown server error occurred.');
-            
+
             extractedTextArea.value = data.extracted_text;
             correctedTextArea.value = data.corrected_text;
+
             resultsContainer.style.display = 'grid';
+
             saveToHistory(data.extracted_text, data.corrected_text, currentImageThumbnail);
 
         } catch (error) {
@@ -248,26 +319,32 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Copy Button Logic ---
+    // ------------------------------------------------
+    // ✅ Copy Buttons
+    // ------------------------------------------------
     document.body.addEventListener('click', (e) => {
         const button = e.target.closest('.copy-btn');
         if (button) {
             const targetId = button.dataset.target;
             const textArea = document.getElementById(targetId);
-            navigator.clipboard.writeText(textArea.value).then(() => {
-                const buttonSpan = button.querySelector('span');
-                const originalText = buttonSpan.innerText;
-                button.classList.add('copied');
-                buttonSpan.innerText = 'Copied!';
-                setTimeout(() => {
-                    button.classList.remove('copied');
-                    buttonSpan.innerText = originalText;
-                }, 2000);
-            }).catch(err => showError('Failed to copy text.'));
+            navigator.clipboard.writeText(textArea.value)
+                .then(() => {
+                    const buttonSpan = button.querySelector('span');
+                    const originalText = buttonSpan.innerText;
+                    button.classList.add('copied');
+                    buttonSpan.innerText = 'Copied!';
+                    setTimeout(() => {
+                        button.classList.remove('copied');
+                        buttonSpan.innerText = originalText;
+                    }, 2000);
+                })
+                .catch(() => showError('Failed to copy text.'));
         }
     });
 
-    // --- UI Helper Functions ---
+    // ------------------------------------------------
+    // ✅ UI Helpers
+    // ------------------------------------------------
     function showError(message) {
         errorContainer.textContent = message;
         errorContainer.style.display = 'block';
@@ -279,7 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
         uploadPrompt.style.display = 'none';
         imageAndResultsContainer.style.display = 'block';
         spinner.style.display = isProcessing ? 'block' : 'none';
-        
+
         if (isProcessing) {
             resultsContainer.style.display = 'none';
             errorContainer.style.display = 'none';
@@ -287,6 +364,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Initial Load ---
+    // ------------------------------------------------
+    // ✅ INITIAL LOAD
+    // ------------------------------------------------
     loadHistory();
 });
